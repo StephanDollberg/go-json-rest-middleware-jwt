@@ -92,7 +92,7 @@ type login struct {
 	Password string `json:"password"`
 }
 
-// Handler that clients can use to get jwt token
+// Handler that clients can use to get a jwt token
 // Reply will be of the form {"token": "TOKEN"}
 func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.Request) {
 	login_vals := login{}
@@ -146,11 +146,11 @@ type token struct {
 }
 
 // Handler that clients can use to refresh their token
-// Should be put
+// Shall be put under an endpoint that is using the JWTMiddleware
 // Reply will be of the form {"token": "TOKEN"}
 func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
 	token, err := parseToken(request, mw.Key)
-	origIat := token.Claims["orig_iat"].(int64)
+	origIat := int64(token.Claims["orig_iat"].(float64))
 
 	if origIat < time.Now().Unix() {
 		mw.unauthorized(writer)
