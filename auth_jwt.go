@@ -1,4 +1,4 @@
-package rest
+package jwt
 
 import (
 	"github.com/ant0ine/go-json-rest/rest"
@@ -157,7 +157,7 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	token, err := parseToken(request, mw.Key)
 	origIat := int64(token.Claims["orig_iat"].(float64))
 
-	if origIat < time.Now().Unix() {
+	if origIat < time.Now().Add(-mw.MaxRefresh).Unix() {
 		mw.unauthorized(writer)
 		return
 	}

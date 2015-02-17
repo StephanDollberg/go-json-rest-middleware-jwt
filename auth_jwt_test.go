@@ -1,4 +1,4 @@
-package rest
+package jwt
 
 import (
 	"github.com/ant0ine/go-json-rest/rest"
@@ -185,11 +185,12 @@ func TestAuthJWT(t *testing.T) {
 	recorded.ContentTypeIsJson()
 
 	// valid refresh
-	// the combination actually doesn't make sense but is ok for the test
 	refreshableToken := jwt.New(jwt.GetSigningMethod("HS256"))
 	refreshableToken.Claims["id"] = "admin"
-	refreshableToken.Claims["exp"] = time.Now().Add(time.Hour).Unix()
-	refreshableToken.Claims["orig_iat"] = time.Now().Unix()
+	// we need to substract one to test the case where token is being created in
+	// the same second as it is checked -> < wouldn't fail
+	refreshableToken.Claims["exp"] = time.Now().Add(time.Hour).Unix() - 1
+	refreshableToken.Claims["orig_iat"] = time.Now().Unix() - 1
 	tokenString, _ = refreshableToken.SignedString(key)
 
 	validRefreshReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
