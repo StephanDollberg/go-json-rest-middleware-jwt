@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// JWTMiddleware provides a Json-Webtoken authentication implementation. On failure, a 401 HTTP response
+// JWTMiddleware provides a Json-Web-Token authentication implementation. On failure, a 401 HTTP response
 // is returned. On success, the wrapped middleware is called, and the userId is made available as
-// request.Env["REMOTE_USER"].(string)
+// request.Env["REMOTE_USER"].(string).
 // Users can get a token by posting a json request to LoginHandler. The token then needs to be passed in
 // the Authentication header. Example: Authorization:Bearer XXX_TOKEN_XXX
 type JWTMiddleware struct {
@@ -21,18 +21,19 @@ type JWTMiddleware struct {
 	Realm string
 
 	// signing algorithm - possible values are HS256, HS384, HS512
-	// Optional, default is HS256
+	// Optional, default is HS256.
 	SigningAlgorithm string
 
-	// Secret key used for signing. Required
+	// Secret key used for signing. Required.
 	Key []byte
 
-	// Duration that a jwt token is valid. Optional, default is one hour
+	// Duration that a jwt token is valid. Optional, defaults to one hour.
 	Timeout time.Duration
 
 	// This field allows clients to refresh their token until MaxRefresh has passed.
 	// Note that clients can refresh their token in the last moment of MaxRefresh.
 	// This means that the maximum validity timespan for a token is MaxRefresh + Timeout.
+	// Optional, defaults to 0 meaning not refreshable.
 	MaxRefresh time.Duration
 
 	// Callback function that should perform the authentication of the user based on userId and
@@ -97,7 +98,7 @@ type login struct {
 }
 
 // Handler that clients can use to get a jwt token.
-// Payload needs to be json in the form of "{"username": "USERNAME", "password": "PASSWORD"}".
+// Payload needs to be json in the form of {"username": "USERNAME", "password": "PASSWORD"}.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.Request) {
 	login_vals := login{}
@@ -152,7 +153,7 @@ type token struct {
 
 // Handler that clients can use to refresh their token. The token still needs to be valid on refresh.
 // Shall be put under an endpoint that is using the JWTMiddleware.
-// Reply will be of the form {"token": "TOKEN"}
+// Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
 	token, err := parseToken(request, mw.Key)
 	origIat := int64(token.Claims["orig_iat"].(float64))
