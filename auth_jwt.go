@@ -156,6 +156,13 @@ type token struct {
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
 	token, err := parseToken(request, mw.Key)
+
+	// Token should be valid anyway as the RefreshHandler is authed
+	if err != nil {
+		mw.unauthorized(writer)
+		return
+	}
+
 	origIat := int64(token.Claims["orig_iat"].(float64))
 
 	if origIat < time.Now().Add(-mw.MaxRefresh).Unix() {
