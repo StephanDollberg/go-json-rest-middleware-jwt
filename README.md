@@ -7,5 +7,5 @@ This is a middleware for [Go-Json-Rest](https://github.com/ant0ine/go-json-rest)
 
 It uses [jwt-go](https://github.com/dgrijalva/jwt-go) to provide a jwt authentication middleware. It provides additional handler functions to provide the login api that will generate the token and an additional refresh handler that can be used to refresh tokens.
 
-An example can be found in the [Go-Json-Rest Examples](https://github.com/ant0ine/go-json-rest-examples) repo.
+An example can be found in the [Go-Json-Rest Examples](https://github.com/ant0ine/go-json-rest-examples/tree/master/jwt) repo.
 
