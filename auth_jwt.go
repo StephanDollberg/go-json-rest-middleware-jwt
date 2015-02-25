@@ -185,6 +185,6 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 }
 
 func (mw *JWTMiddleware) unauthorized(writer rest.ResponseWriter) {
-	writer.Header().Set("WWW-Authenticate", "Basic realm="+mw.Realm)
+	writer.Header().Set("WWW-Authenticate", "JWT realm="+mw.Realm)
 	rest.Error(writer, "Not Authorized", http.StatusUnauthorized)
 }
