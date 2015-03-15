@@ -44,6 +44,8 @@ type JWTMiddleware struct {
 	// only after an authentication success. Must return true on success, false on failure.
 	// Optional, default to success.
 	Authorizator func(userId string, request *rest.Request) bool
+
+	PayloadFunc func(userId string) map[string]interface{}
 }
 
 // MiddlewareFunc makes JWTMiddleware implement the Middleware interface.
@@ -89,6 +91,8 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 	}
 
 	request.Env["REMOTE_USER"] = id
+	request.Env["JWT_PAYLOAD"] = token.Claims
+
 	handler(writer, request)
 }
 
@@ -115,6 +119,13 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 	}
 
 	token := jwt.New(jwt.GetSigningMethod(mw.SigningAlgorithm))
+
+	if mw.PayloadFunc != nil {
+		for key, value := range mw.PayloadFunc(login_vals.Username) {
+			token.Claims[key] = value
+		}
+	}
+
 	token.Claims["id"] = login_vals.Username
 	token.Claims["exp"] = time.Now().Add(mw.Timeout).Unix()
 	if mw.MaxRefresh != 0 {
@@ -171,6 +182,11 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	}
 
 	newToken := jwt.New(jwt.GetSigningMethod(mw.SigningAlgorithm))
+
+	for key := range token.Claims {
+		newToken.Claims[key] = token.Claims[key]
+	}
+
 	newToken.Claims["id"] = token.Claims["id"]
 	newToken.Claims["exp"] = time.Now().Add(mw.Timeout).Unix()
 	newToken.Claims["orig_iat"] = origIat
