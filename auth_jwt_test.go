@@ -1,11 +1,16 @@
 package jwt
 
 import (
+	"testing"
+	"time"
+
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/ant0ine/go-json-rest/rest/test"
 	"github.com/dgrijalva/jwt-go"
-	"testing"
-	"time"
+)
+
+var (
+	key = []byte("secret key")
 )
 
 type DecoderToken struct {
@@ -22,7 +27,6 @@ func makeTokenString(username string, key []byte) string {
 }
 
 func TestAuthJWT(t *testing.T) {
-	key := []byte("secret key")
 
 	// the middleware to test
 	authMiddleware := &JWTMiddleware{
@@ -214,4 +218,110 @@ func TestAuthJWT(t *testing.T) {
 		int64(refreshToken.Claims["exp"].(float64)) < refreshableToken.Claims["exp"].(int64) {
 		t.Errorf("Received refreshed token with wrong data")
 	}
+}
+
+func TestAuthJWTPayload(t *testing.T) {
+	authMiddleware := &JWTMiddleware{
+		Realm:            "test zone",
+		SigningAlgorithm: "HS256",
+		Key:              key,
+		Timeout:          time.Hour,
+		MaxRefresh:       time.Hour * 24,
+		Authenticator: func(userId string, password string) bool {
+			if userId == "admin" && password == "admin" {
+				return true
+			}
+			return false
+		},
+		PayloadFunc: func(userId string) map[string]interface{} {
+			// tests normal value
+			// tests overwriting of reserved jwt values should have no effect
+			return map[string]interface{}{"testkey": "testval", "exp": 0}
+		},
+	}
+
+	loginApi := rest.NewApi()
+	loginApi.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
+
+	// correct payload
+	loginCreds := map[string]string{"username": "admin", "password": "admin"}
+	rightCredReq := test.MakeSimpleRequest("POST", "http://localhost/", loginCreds)
+	recorded := test.RunRequest(t, loginApi.MakeHandler(), rightCredReq)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+
+	nToken := DecoderToken{}
+	test.DecodeJsonPayload(recorded.Recorder, &nToken)
+	newToken, err := jwt.Parse(nToken.Token, func(token *jwt.Token) (interface{}, error) {
+		return key, nil
+	})
+
+	if err != nil {
+		t.Errorf("Received new token with wrong signature", err)
+	}
+
+	if newToken.Claims["testkey"].(string) != "testval" || newToken.Claims["exp"].(float64) == 0 {
+		t.Errorf("Received new token without payload")
+	}
+
+	// correct payload after refresh
+	refreshApi := rest.NewApi()
+	refreshApi.Use(authMiddleware)
+	refreshApi.SetApp(rest.AppSimple(authMiddleware.RefreshHandler))
+
+	refreshableToken := jwt.New(jwt.GetSigningMethod("HS256"))
+	refreshableToken.Claims["id"] = "admin"
+	refreshableToken.Claims["exp"] = time.Now().Add(time.Hour).Unix()
+	refreshableToken.Claims["orig_iat"] = time.Now().Unix()
+	refreshableToken.Claims["testkey"] = "testval"
+	tokenString, _ := refreshableToken.SignedString(key)
+
+	validRefreshReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
+	validRefreshReq.Header.Set("Authorization", "Bearer "+tokenString)
+	recorded = test.RunRequest(t, refreshApi.MakeHandler(), validRefreshReq)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+
+	rToken := DecoderToken{}
+	test.DecodeJsonPayload(recorded.Recorder, &rToken)
+	refreshToken, err := jwt.Parse(rToken.Token, func(token *jwt.Token) (interface{}, error) {
+		return key, nil
+	})
+
+	if err != nil {
+		t.Errorf("Received refreshed token with wrong signature", err)
+	}
+
+	if refreshToken.Claims["testkey"].(string) != "testval" {
+		t.Errorf("Received new token without payload")
+	}
+
+	// payload is accessible in request
+	payloadApi := rest.NewApi()
+	payloadApi.Use(authMiddleware)
+	payloadApi.SetApp(rest.AppSimple(func(w rest.ResponseWriter, r *rest.Request) {
+		testval := r.Env["JWT_PAYLOAD"].(map[string]interface{})["testkey"].(string)
+		w.WriteJson(map[string]string{"testkey": testval})
+	}))
+
+	payloadToken := jwt.New(jwt.GetSigningMethod("HS256"))
+	payloadToken.Claims["id"] = "admin"
+	payloadToken.Claims["exp"] = time.Now().Add(time.Hour).Unix()
+	payloadToken.Claims["orig_iat"] = time.Now().Unix()
+	payloadToken.Claims["testkey"] = "testval"
+	payloadTokenString, _ := payloadToken.SignedString(key)
+
+	payloadReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
+	payloadReq.Header.Set("Authorization", "Bearer "+payloadTokenString)
+	recorded = test.RunRequest(t, payloadApi.MakeHandler(), payloadReq)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+
+	payload := map[string]string{}
+	test.DecodeJsonPayload(recorded.Recorder, &payload)
+
+	if payload["testkey"] != "testval" {
+		t.Errorf("Received new token without payload")
+	}
+
 }

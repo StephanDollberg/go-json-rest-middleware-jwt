@@ -45,6 +45,11 @@ type JWTMiddleware struct {
 	// Optional, default to success.
 	Authorizator func(userId string, request *rest.Request) bool
 
+	// Callback function that will be called during login.
+	// Using this function it is possible to add additional payload data to the webtoken.
+	// The data is then made available during requests via request.Env["JWT_PAYLOAD"].
+	// Note that the payload is not encrypted.
+	// The attributes mentioned on jwt.io can't be used as keys for the map.
 	PayloadFunc func(userId string) map[string]interface{}
 }
 
