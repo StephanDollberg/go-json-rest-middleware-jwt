@@ -50,6 +50,7 @@ type JWTMiddleware struct {
 	// The data is then made available during requests via request.Env["JWT_PAYLOAD"].
 	// Note that the payload is not encrypted.
 	// The attributes mentioned on jwt.io can't be used as keys for the map.
+	// Optional, by default no additional data will be set.
 	PayloadFunc func(userId string) map[string]interface{}
 }
 
