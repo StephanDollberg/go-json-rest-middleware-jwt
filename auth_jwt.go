@@ -1,3 +1,4 @@
+// Package jwt provides Json-Web-Token authentication for the go-json-rest framework
 package jwt
 
 import (
