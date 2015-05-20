@@ -103,6 +103,16 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 	handler(writer, request)
 }
 
+// Helper function to extract the JWT claims
+func ExtractClaims(request *rest.Request) map[string]interface{} {
+	if request.Env["JWT_PAYLOAD"] == nil {
+		empty_claims := make(map[string]interface{})
+		return empty_claims
+	}
+	jwt_claims := request.Env["JWT_PAYLOAD"].(map[string]interface{})
+	return jwt_claims
+}
+
 type login struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
