@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"log"
 	"testing"
 	"time"
 
@@ -324,4 +325,76 @@ func TestAuthJWTPayload(t *testing.T) {
 		t.Errorf("Received new token without payload")
 	}
 
+}
+
+func TestClaimsDuringAuthorization(t *testing.T) {
+	authMiddleware := &JWTMiddleware{
+		Realm:            "test zone",
+		SigningAlgorithm: "HS256",
+		Key:              key,
+		Timeout:          time.Hour,
+		MaxRefresh:       time.Hour * 24,
+		PayloadFunc: func(userId string) map[string]interface{} {
+			// Set custom claim, to be checked in Authorizator method
+			return map[string]interface{}{"testkey": "testval", "exp": 0}
+		},
+		Authenticator: func(userId string, password string) bool {
+			// Not testing authentication, just authorization, so always return true
+			return true
+		},
+		Authorizator: func(userId string, request *rest.Request) bool {
+			// Check that payload is set, output helpful debugging message if not
+			if request.Env["JWT_PAYLOAD"] == nil {
+				log.Println("JWT_PAYLOAD was unset during Authorization!")
+				return false
+			}
+			// Cast / Extract claims
+			jwt_claims := request.Env["JWT_PAYLOAD"].(map[string]interface{})
+
+			// Check the actual claim, set in PayloadFunc
+			return (jwt_claims["testkey"] == "testval")
+		},
+	}
+
+	// Simple endpoint
+	endpoint := func(w rest.ResponseWriter, r *rest.Request) {
+		// Dummy endpoint, output doesn't really matter, we are checking
+		// the code returned
+		w.WriteJson(map[string]string{"Id": "123"})
+	}
+
+	// Setup simple app structure
+	loginApi := rest.NewApi()
+	loginApi.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
+	loginApi.Use(&rest.IfMiddleware{
+		// Only authenticate non /login requests
+		Condition: func(request *rest.Request) bool {
+			return request.URL.Path != "/login"
+		},
+		IfTrue: authMiddleware,
+	})
+	api_router, _ := rest.MakeRouter(
+		rest.Post("/login", authMiddleware.LoginHandler),
+		rest.Get("/", endpoint),
+	)
+	loginApi.SetApp(api_router)
+
+	// Authenticate
+	loginCreds := map[string]string{"username": "admin", "password": "admin"}
+	rightCredReq := test.MakeSimpleRequest("POST", "http://localhost/login", loginCreds)
+	recorded := test.RunRequest(t, loginApi.MakeHandler(), rightCredReq)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+
+	// Decode received token, to be sent with endpoint request
+	nToken := DecoderToken{}
+	test.DecodeJsonPayload(recorded.Recorder, &nToken)
+
+	// Request endpoint, triggering Authorization.
+	// If we get a 200 then the claims were available in Authorizator method
+	req := test.MakeSimpleRequest("GET", "http://localhost/", nil)
+	req.Header.Set("Authorization", "Bearer "+nToken.Token)
+	recorded = test.RunRequest(t, loginApi.MakeHandler(), req)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
 }
