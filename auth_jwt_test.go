@@ -108,6 +108,18 @@ func TestAuthJWT(t *testing.T) {
 	recorded = test.RunRequest(t, handler, expiredTimestampReq)
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
+	
+	// right credt, right method, right priv, wrong signing method on request
+	tokenBadSigning := jwt.New(jwt.GetSigningMethod("HS384"))
+	tokenBadSigning.Claims["id"] = "admin"
+	tokenBadSigning.Claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+	tokenBadSigningString, _ := tokenBadSigning.SignedString(key)
+
+	BadSigningReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
+	BadSigningReq.Header.Set("Authorization", "Bearer "+tokenBadSigningString)
+	recorded = test.RunRequest(t, handler, BadSigningReq)
+	recorded.CodeIs(401)
+	recorded.ContentTypeIsJson()
 
 	// api for testing success
 	apiSuccess := rest.NewApi()
