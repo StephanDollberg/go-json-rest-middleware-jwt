@@ -83,7 +83,7 @@ func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFu
 }
 
 func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *rest.Request, handler rest.HandlerFunc) {
-	token, err := parseToken(request, mw.Key)
+	token, err := mw.parseToken(request)
 
 	if err != nil {
 		mw.unauthorized(writer)
@@ -148,7 +148,7 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 	writer.WriteJson(&map[string]string{"token": tokenString})
 }
 
-func parseToken(request *rest.Request, key []byte) (*jwt.Token, error) {
+func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 	authHeader := request.Header.Get("Authorization")
 
 	if authHeader == "" {
@@ -161,7 +161,10 @@ func parseToken(request *rest.Request, key []byte) (*jwt.Token, error) {
 	}
 
 	return jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
-		return key, nil
+		if(jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method){
+			return nil, errors.New("Invalid signing algorithm")
+		}
+		return mw.Key, nil
 	})
 }
 
@@ -173,7 +176,7 @@ type token struct {
 // Shall be put under an endpoint that is using the JWTMiddleware.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
-	token, err := parseToken(request, mw.Key)
+	token, err := mw.parseToken(request)
 
 	// Token should be valid anyway as the RefreshHandler is authed
 	if err != nil {
