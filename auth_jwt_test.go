@@ -1,7 +1,6 @@
 package jwt
 
 import (
-	"log"
 	"testing"
 	"time"
 
@@ -355,13 +354,7 @@ func TestClaimsDuringAuthorization(t *testing.T) {
 			return true
 		},
 		Authorizator: func(userId string, request *rest.Request) bool {
-			// Check that payload is set, output helpful debugging message if not
-			if request.Env["JWT_PAYLOAD"] == nil {
-				log.Println("JWT_PAYLOAD was unset during Authorization!")
-				return false
-			}
-			// Cast / Extract claims
-			jwt_claims := request.Env["JWT_PAYLOAD"].(map[string]interface{})
+			jwt_claims := ExtractClaims(request)
 
 			// Check the actual claim, set in PayloadFunc
 			return (jwt_claims["testkey"] == "testval")
