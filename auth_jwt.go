@@ -189,7 +189,15 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	token, err := mw.parseToken(request)
 
 	// Token should be valid anyway as the RefreshHandler is authed
-	if err != nil {
+	switch err.(type){
+	case *jwt.ValidationError:
+		if err.(*jwt.ValidationError).Errors != jwt.ValidationErrorExpired {
+			mw.unauthorized(writer)
+			return
+		}
+	case nil:
+		break
+	default:
 		mw.unauthorized(writer)
 		return
 	}
