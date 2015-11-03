@@ -103,14 +103,18 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 	handler(writer, request)
 }
 
-// Helper function to extract the JWT claims
+// ExtractClaims allows to retrieve the payload
 func ExtractClaims(request *rest.Request) map[string]interface{} {
 	if request.Env["JWT_PAYLOAD"] == nil {
-		empty_claims := make(map[string]interface{})
-		return empty_claims
+		emptyClaims := make(map[string]interface{})
+		return emptyClaims
 	}
-	jwt_claims := request.Env["JWT_PAYLOAD"].(map[string]interface{})
-	return jwt_claims
+	jwtClaims := request.Env["JWT_PAYLOAD"].(map[string]interface{})
+	return jwtClaims
+}
+
+type resultToken struct {
+	Token string `json:"token"`
 }
 
 type login struct {
@@ -118,19 +122,19 @@ type login struct {
 	Password string `json:"password"`
 }
 
-// Handler that clients can use to get a jwt token.
+// LoginHandler can be used by clients to get a jwt token.
 // Payload needs to be json in the form of {"username": "USERNAME", "password": "PASSWORD"}.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.Request) {
-	login_vals := login{}
-	err := request.DecodeJsonPayload(&login_vals)
+	loginVals := login{}
+	err := request.DecodeJsonPayload(&loginVals)
 
 	if err != nil {
 		mw.unauthorized(writer)
 		return
 	}
 
-	if !mw.Authenticator(login_vals.Username, login_vals.Password) {
+	if !mw.Authenticator(loginVals.Username, loginVals.Password) {
 		mw.unauthorized(writer)
 		return
 	}
@@ -138,12 +142,12 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 	token := jwt.New(jwt.GetSigningMethod(mw.SigningAlgorithm))
 
 	if mw.PayloadFunc != nil {
-		for key, value := range mw.PayloadFunc(login_vals.Username) {
+		for key, value := range mw.PayloadFunc(loginVals.Username) {
 			token.Claims[key] = value
 		}
 	}
 
-	token.Claims["id"] = login_vals.Username
+	token.Claims["id"] = loginVals.Username
 	token.Claims["exp"] = time.Now().Add(mw.Timeout).Unix()
 	if mw.MaxRefresh != 0 {
 		token.Claims["orig_iat"] = time.Now().Unix()
@@ -155,7 +159,7 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 		return
 	}
 
-	writer.WriteJson(&map[string]string{"token": tokenString})
+	writer.WriteJson(resultToken{Token: tokenString})
 }
 
 func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
@@ -171,18 +175,14 @@ func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 	}
 
 	return jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
-		if(jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method){
+		if jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method {
 			return nil, errors.New("Invalid signing algorithm")
 		}
 		return mw.Key, nil
 	})
 }
 
-type token struct {
-	Token string `json:"token"`
-}
-
-// Handler that clients can use to refresh their token. The token still needs to be valid on refresh.
+// RefreshHandler can be used to refresh a token. The token still needs to be valid on refresh.
 // Shall be put under an endpoint that is using the JWTMiddleware.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
@@ -217,7 +217,7 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 		return
 	}
 
-	writer.WriteJson(&map[string]string{"token": tokenString})
+	writer.WriteJson(resultToken{Token: tokenString})
 }
 
 func (mw *JWTMiddleware) unauthorized(writer rest.ResponseWriter) {
