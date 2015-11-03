@@ -232,6 +232,52 @@ func TestAuthJWT(t *testing.T) {
 	}
 }
 
+
+func TestRefreshJWT(t *testing.T) {
+	authMiddleware := &JWTMiddleware{
+		Realm:      "test zone",
+		Key:        key,
+		Timeout:    time.Hour,
+		MaxRefresh: time.Hour * 24,
+		Authenticator: func(userId string, password string) bool {
+			return userId == "admin" && password == "admin"
+		},
+		Authorizator: func(userId string, request *rest.Request) bool {
+			return request.Method == "GET"
+		},
+	}
+
+	loginApi := rest.NewApi()
+	loginApi.SetApp(rest.AppSimple(authMiddleware.RefreshHandler))
+	loginApi.Use(&rest.IfMiddleware{
+		// Only authenticate non /refresh requests
+		Condition: func(request *rest.Request) bool {
+			return request.URL.Path != "/refresh"
+		},
+		IfTrue: authMiddleware,
+	})
+	api_router, _ := rest.MakeRouter(
+		rest.Get("/refresh", authMiddleware.RefreshHandler),
+	)
+	loginApi.SetApp(api_router)
+
+	// valid refresh (exp is >= Timeout and <= MaxRefresh, so it's refreshable)
+	refreshableOutdatedToken := jwt.New(jwt.GetSigningMethod("HS256"))
+	refreshableOutdatedToken.Claims["id"] = "admin"
+	// we need to substract one hour and 1 sec to make token expired
+	refreshableOutdatedToken.Claims["exp"] = time.Now().Unix() - 1
+	refreshableOutdatedToken.Claims["orig_iat"] = time.Now().Add(-time.Hour).Unix() - 1
+	tokenString, _ := refreshableOutdatedToken.SignedString(key)
+
+	validRefreshOutdatedReq := test.MakeSimpleRequest("GET", "http://localhost/refresh", nil)
+	validRefreshOutdatedReq.Header.Set("Authorization", "Bearer "+tokenString)
+
+	recorded := test.RunRequest(t, loginApi.MakeHandler(), validRefreshOutdatedReq)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+}
+
+
 func TestAuthJWTPayload(t *testing.T) {
 	authMiddleware := &JWTMiddleware{
 		Realm:            "test zone",
