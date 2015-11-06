@@ -107,7 +107,7 @@ func (mw *Middleware) middlewareImpl(writer rest.ResponseWriter, request *rest.R
 	handler(writer, request)
 }
 
-// ExtractClaims is a helper function to extract the JWT claims
+// ExtractClaims allows to retrieve the payload
 func ExtractClaims(request *rest.Request) map[string]interface{} {
 	if request.Env["JWT_PAYLOAD"] == nil {
 		emptyClaims := make(map[string]interface{})
@@ -117,12 +117,16 @@ func ExtractClaims(request *rest.Request) map[string]interface{} {
 	return jwtClaims
 }
 
+type resultToken struct {
+	Token string `json:"token"`
+}
+
 type login struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// LoginHandler clients use to get a jwt token.
+// LoginHandler can be used by clients to get a jwt token.
 // Payload needs to be json in the form of {"username": "USERNAME", "password": "PASSWORD"}.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *Middleware) LoginHandler(writer rest.ResponseWriter, request *rest.Request) {
@@ -163,7 +167,7 @@ func (mw *Middleware) LoginHandler(writer rest.ResponseWriter, request *rest.Req
 		return
 	}
 
-	writer.WriteJson(&map[string]string{"token": tokenString})
+	writer.WriteJson(resultToken{Token: tokenString})
 }
 
 func (mw *Middleware) parseToken(request *rest.Request) (*jwt.Token, error) {
@@ -193,8 +197,8 @@ type token struct {
 	Token string `json:"token"`
 }
 
-// RefreshHandler clients can use to refresh their token. The token still needs to be valid on refresh.
-// Shall be put under an endpoint that is using the Middleware.
+// RefreshHandler can be used to refresh a token. The token still needs to be valid on refresh.
+// Shall be put under an endpoint that is using the JWTMiddleware.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *Middleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
 	token, err := mw.parseToken(request)
@@ -230,7 +234,7 @@ func (mw *Middleware) RefreshHandler(writer rest.ResponseWriter, request *rest.R
 		return
 	}
 
-	writer.WriteJson(&map[string]string{"token": tokenString})
+	writer.WriteJson(resultToken{Token: tokenString})
 }
 
 func (mw *Middleware) unauthorized(writer rest.ResponseWriter, err error) {
