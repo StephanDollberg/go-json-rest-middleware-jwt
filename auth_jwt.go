@@ -26,7 +26,10 @@ type Middleware struct {
 	SigningAlgorithm string
 
 	// Secret key used for signing. Required.
-	Key []byte
+	Key interface{}
+
+	// Secret key used for signing. Required.
+	VerifyKey interface{}
 
 	// Duration that a jwt token is valid. Optional, defaults to one hour.
 	Timeout time.Duration
@@ -178,6 +181,9 @@ func (mw *Middleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 	return jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
 		if jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method {
 			return nil, errors.New("Invalid signing algorithm")
+		}
+		if mw.VerifyKey != nil {
+			return mw.VerifyKey, nil
 		}
 		return mw.Key, nil
 	})

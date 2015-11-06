@@ -1,6 +1,10 @@
 package jwt
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
@@ -29,16 +33,16 @@ func makeTokenString(username string, key []byte) string {
 func TestAuthJWT(t *testing.T) {
 
 	// the middleware to test
-	authMiddleware := &JWTMiddleware{
+	authMiddleware := &Middleware{
 		Realm:      "test zone",
 		Key:        key,
 		Timeout:    time.Hour,
 		MaxRefresh: time.Hour * 24,
-		Authenticator: func(userId string, password string) bool {
+		Authenticator: func(userId string, password string) error {
 			if userId == "admin" && password == "admin" {
-				return true
+				return nil
 			}
-			return false
+			return errors.New("Username and passwork should be admin")
 		},
 		Authorizator: func(userId string, request *rest.Request) bool {
 			if request.Method == "GET" {
@@ -107,7 +111,7 @@ func TestAuthJWT(t *testing.T) {
 	recorded = test.RunRequest(t, handler, expiredTimestampReq)
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
-	
+
 	// right credt, right method, right priv, wrong signing method on request
 	tokenBadSigning := jwt.New(jwt.GetSigningMethod("HS384"))
 	tokenBadSigning.Claims["id"] = "admin"
@@ -142,20 +146,20 @@ func TestAuthJWT(t *testing.T) {
 	recorded.ContentTypeIsJson()
 
 	// login tests
-	loginApi := rest.NewApi()
-	loginApi.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
+	loginAPI := rest.NewApi()
+	loginAPI.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
 
 	// wrong login
 	wrongLoginCreds := map[string]string{"username": "admin", "password": "admIn"}
 	wrongLoginReq := test.MakeSimpleRequest("POST", "http://localhost/", wrongLoginCreds)
-	recorded = test.RunRequest(t, loginApi.MakeHandler(), wrongLoginReq)
+	recorded = test.RunRequest(t, loginAPI.MakeHandler(), wrongLoginReq)
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
 
 	// empty login
 	emptyLoginCreds := map[string]string{}
 	emptyLoginReq := test.MakeSimpleRequest("POST", "http://localhost/", emptyLoginCreds)
-	recorded = test.RunRequest(t, loginApi.MakeHandler(), emptyLoginReq)
+	recorded = test.RunRequest(t, loginAPI.MakeHandler(), emptyLoginReq)
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
 
@@ -163,7 +167,7 @@ func TestAuthJWT(t *testing.T) {
 	before := time.Now().Unix()
 	loginCreds := map[string]string{"username": "admin", "password": "admin"}
 	rightCredReq := test.MakeSimpleRequest("POST", "http://localhost/", loginCreds)
-	recorded = test.RunRequest(t, loginApi.MakeHandler(), rightCredReq)
+	recorded = test.RunRequest(t, loginAPI.MakeHandler(), rightCredReq)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 
@@ -174,7 +178,7 @@ func TestAuthJWT(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Errorf("Received new token with wrong signature", err)
+		t.Errorf("Received new token with wrong signature %s", err)
 	}
 
 	if newToken.Claims["id"].(string) != "admin" ||
@@ -182,9 +186,9 @@ func TestAuthJWT(t *testing.T) {
 		t.Errorf("Received new token with wrong data")
 	}
 
-	refreshApi := rest.NewApi()
-	refreshApi.Use(authMiddleware)
-	refreshApi.SetApp(rest.AppSimple(authMiddleware.RefreshHandler))
+	refreshAPI := rest.NewApi()
+	refreshAPI.Use(authMiddleware)
+	refreshAPI.SetApp(rest.AppSimple(authMiddleware.RefreshHandler))
 
 	// refresh with expired max refresh
 	unrefreshableToken := jwt.New(jwt.GetSigningMethod("HS256"))
@@ -196,7 +200,7 @@ func TestAuthJWT(t *testing.T) {
 
 	unrefreshableReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
 	unrefreshableReq.Header.Set("Authorization", "Bearer "+tokenString)
-	recorded = test.RunRequest(t, refreshApi.MakeHandler(), unrefreshableReq)
+	recorded = test.RunRequest(t, refreshAPI.MakeHandler(), unrefreshableReq)
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
 
@@ -211,7 +215,7 @@ func TestAuthJWT(t *testing.T) {
 
 	validRefreshReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
 	validRefreshReq.Header.Set("Authorization", "Bearer "+tokenString)
-	recorded = test.RunRequest(t, refreshApi.MakeHandler(), validRefreshReq)
+	recorded = test.RunRequest(t, refreshAPI.MakeHandler(), validRefreshReq)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 
@@ -222,7 +226,7 @@ func TestAuthJWT(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Errorf("Received refreshed token with wrong signature", err)
+		t.Errorf("Received refreshed token with wrong signature %s", err)
 	}
 
 	if refreshToken.Claims["id"].(string) != "admin" ||
@@ -233,17 +237,17 @@ func TestAuthJWT(t *testing.T) {
 }
 
 func TestAuthJWTPayload(t *testing.T) {
-	authMiddleware := &JWTMiddleware{
+	authMiddleware := &Middleware{
 		Realm:            "test zone",
 		SigningAlgorithm: "HS256",
 		Key:              key,
 		Timeout:          time.Hour,
 		MaxRefresh:       time.Hour * 24,
-		Authenticator: func(userId string, password string) bool {
+		Authenticator: func(userId string, password string) error {
 			if userId == "admin" && password == "admin" {
-				return true
+				return nil
 			}
-			return false
+			return errors.New("Username and passwork should be admin")
 		},
 		PayloadFunc: func(userId string) map[string]interface{} {
 			// tests normal value
@@ -252,13 +256,13 @@ func TestAuthJWTPayload(t *testing.T) {
 		},
 	}
 
-	loginApi := rest.NewApi()
-	loginApi.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
+	loginAPI := rest.NewApi()
+	loginAPI.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
 
 	// correct payload
 	loginCreds := map[string]string{"username": "admin", "password": "admin"}
 	rightCredReq := test.MakeSimpleRequest("POST", "http://localhost/", loginCreds)
-	recorded := test.RunRequest(t, loginApi.MakeHandler(), rightCredReq)
+	recorded := test.RunRequest(t, loginAPI.MakeHandler(), rightCredReq)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 
@@ -269,7 +273,7 @@ func TestAuthJWTPayload(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Errorf("Received new token with wrong signature", err)
+		t.Errorf("Received new token with wrong signature %s", err)
 	}
 
 	if newToken.Claims["testkey"].(string) != "testval" || newToken.Claims["exp"].(float64) == 0 {
@@ -277,9 +281,9 @@ func TestAuthJWTPayload(t *testing.T) {
 	}
 
 	// correct payload after refresh
-	refreshApi := rest.NewApi()
-	refreshApi.Use(authMiddleware)
-	refreshApi.SetApp(rest.AppSimple(authMiddleware.RefreshHandler))
+	refreshAPI := rest.NewApi()
+	refreshAPI.Use(authMiddleware)
+	refreshAPI.SetApp(rest.AppSimple(authMiddleware.RefreshHandler))
 
 	refreshableToken := jwt.New(jwt.GetSigningMethod("HS256"))
 	refreshableToken.Claims["id"] = "admin"
@@ -290,7 +294,7 @@ func TestAuthJWTPayload(t *testing.T) {
 
 	validRefreshReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
 	validRefreshReq.Header.Set("Authorization", "Bearer "+tokenString)
-	recorded = test.RunRequest(t, refreshApi.MakeHandler(), validRefreshReq)
+	recorded = test.RunRequest(t, refreshAPI.MakeHandler(), validRefreshReq)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 
@@ -301,7 +305,7 @@ func TestAuthJWTPayload(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Errorf("Received refreshed token with wrong signature", err)
+		t.Errorf("Received refreshed token with wrong signature %s", err)
 	}
 
 	if refreshToken.Claims["testkey"].(string) != "testval" {
@@ -309,9 +313,9 @@ func TestAuthJWTPayload(t *testing.T) {
 	}
 
 	// payload is accessible in request
-	payloadApi := rest.NewApi()
-	payloadApi.Use(authMiddleware)
-	payloadApi.SetApp(rest.AppSimple(func(w rest.ResponseWriter, r *rest.Request) {
+	payloadAPI := rest.NewApi()
+	payloadAPI.Use(authMiddleware)
+	payloadAPI.SetApp(rest.AppSimple(func(w rest.ResponseWriter, r *rest.Request) {
 		testval := r.Env["JWT_PAYLOAD"].(map[string]interface{})["testkey"].(string)
 		w.WriteJson(map[string]string{"testkey": testval})
 	}))
@@ -325,7 +329,7 @@ func TestAuthJWTPayload(t *testing.T) {
 
 	payloadReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
 	payloadReq.Header.Set("Authorization", "Bearer "+payloadTokenString)
-	recorded = test.RunRequest(t, payloadApi.MakeHandler(), payloadReq)
+	recorded = test.RunRequest(t, payloadAPI.MakeHandler(), payloadReq)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 
@@ -339,7 +343,7 @@ func TestAuthJWTPayload(t *testing.T) {
 }
 
 func TestClaimsDuringAuthorization(t *testing.T) {
-	authMiddleware := &JWTMiddleware{
+	authMiddleware := &Middleware{
 		Realm:            "test zone",
 		SigningAlgorithm: "HS256",
 		Key:              key,
@@ -349,15 +353,15 @@ func TestClaimsDuringAuthorization(t *testing.T) {
 			// Set custom claim, to be checked in Authorizator method
 			return map[string]interface{}{"testkey": "testval", "exp": 0}
 		},
-		Authenticator: func(userId string, password string) bool {
+		Authenticator: func(userId string, password string) error {
 			// Not testing authentication, just authorization, so always return true
-			return true
+			return nil
 		},
 		Authorizator: func(userId string, request *rest.Request) bool {
-			jwt_claims := ExtractClaims(request)
+			jwtClaims := ExtractClaims(request)
 
 			// Check the actual claim, set in PayloadFunc
-			return (jwt_claims["testkey"] == "testval")
+			return (jwtClaims["testkey"] == "testval")
 		},
 	}
 
@@ -369,25 +373,25 @@ func TestClaimsDuringAuthorization(t *testing.T) {
 	}
 
 	// Setup simple app structure
-	loginApi := rest.NewApi()
-	loginApi.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
-	loginApi.Use(&rest.IfMiddleware{
+	loginAPI := rest.NewApi()
+	loginAPI.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
+	loginAPI.Use(&rest.IfMiddleware{
 		// Only authenticate non /login requests
 		Condition: func(request *rest.Request) bool {
 			return request.URL.Path != "/login"
 		},
 		IfTrue: authMiddleware,
 	})
-	api_router, _ := rest.MakeRouter(
+	apiRouter, _ := rest.MakeRouter(
 		rest.Post("/login", authMiddleware.LoginHandler),
 		rest.Get("/", endpoint),
 	)
-	loginApi.SetApp(api_router)
+	loginAPI.SetApp(apiRouter)
 
 	// Authenticate
 	loginCreds := map[string]string{"username": "admin", "password": "admin"}
 	rightCredReq := test.MakeSimpleRequest("POST", "http://localhost/login", loginCreds)
-	recorded := test.RunRequest(t, loginApi.MakeHandler(), rightCredReq)
+	recorded := test.RunRequest(t, loginAPI.MakeHandler(), rightCredReq)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 
@@ -399,7 +403,79 @@ func TestClaimsDuringAuthorization(t *testing.T) {
 	// If we get a 200 then the claims were available in Authorizator method
 	req := test.MakeSimpleRequest("GET", "http://localhost/", nil)
 	req.Header.Set("Authorization", "Bearer "+nToken.Token)
-	recorded = test.RunRequest(t, loginApi.MakeHandler(), req)
+	recorded = test.RunRequest(t, loginAPI.MakeHandler(), req)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+}
+
+func TestAuthJWTasymmetricKeys(t *testing.T) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
+	authMiddleware := &Middleware{
+		Realm:            "test zone",
+		SigningAlgorithm: "ES256",
+		Key:              privateKey,
+		VerifyKey:        &privateKey.PublicKey,
+		Timeout:          time.Hour,
+		MaxRefresh:       time.Hour * 24,
+		PayloadFunc: func(userId string) map[string]interface{} {
+			// Set custom claim, to be checked in Authorizator method
+			return map[string]interface{}{"testkey": "testval", "exp": 0}
+		},
+		Authenticator: func(userId string, password string) error {
+			// Not testing authentication, just authorization, so always return true
+			return nil
+		},
+		Authorizator: func(userId string, request *rest.Request) bool {
+			jwtClaims := ExtractClaims(request)
+
+			// Check the actual claim, set in PayloadFunc
+			return (jwtClaims["testkey"] == "testval")
+		},
+	}
+
+	// Simple endpoint
+	endpoint := func(w rest.ResponseWriter, r *rest.Request) {
+		// Dummy endpoint, output doesn't really matter, we are checking
+		// the code returned
+		w.WriteJson(map[string]string{"Id": "123"})
+	}
+
+	// Setup simple app structure
+	loginAPI := rest.NewApi()
+	loginAPI.SetApp(rest.AppSimple(authMiddleware.LoginHandler))
+	loginAPI.Use(&rest.IfMiddleware{
+		// Only authenticate non /login requests
+		Condition: func(request *rest.Request) bool {
+			return request.URL.Path != "/login"
+		},
+		IfTrue: authMiddleware,
+	})
+	apiRouter, _ := rest.MakeRouter(
+		rest.Post("/login", authMiddleware.LoginHandler),
+		rest.Get("/", endpoint),
+	)
+	loginAPI.SetApp(apiRouter)
+
+	// Authenticate
+	loginCreds := map[string]string{"username": "admin", "password": "admin"}
+	rightCredReq := test.MakeSimpleRequest("POST", "http://localhost/login", loginCreds)
+	recorded := test.RunRequest(t, loginAPI.MakeHandler(), rightCredReq)
+	recorded.CodeIs(200)
+	recorded.ContentTypeIsJson()
+
+	// Decode received token, to be sent with endpoint request
+	nToken := DecoderToken{}
+	test.DecodeJsonPayload(recorded.Recorder, &nToken)
+
+	// Request endpoint, triggering Authorization.
+	// If we get a 200 then the claims were available in Authorizator method
+	req := test.MakeSimpleRequest("GET", "http://localhost/", nil)
+	req.Header.Set("Authorization", "Bearer "+nToken.Token)
+	recorded = test.RunRequest(t, loginAPI.MakeHandler(), req)
 	recorded.CodeIs(200)
 	recorded.ContentTypeIsJson()
 }
