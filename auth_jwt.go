@@ -82,14 +82,15 @@ func (mw *Middleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFunc 
 		}
 	}
 
-	return func(writer rest.ResponseWriter, request *rest.Request) { mw.middlewareImpl(writer, request, handler) }
+	return func(writer rest.ResponseWriter, request *rest.Request) {
+		mw.middlewareImpl(writer, request, handler)
+	}
 }
 
 func (mw *Middleware) middlewareImpl(writer rest.ResponseWriter, request *rest.Request, handler rest.HandlerFunc) {
 	token, err := mw.parseToken(request)
 
 	if err != nil {
-		log.Println(err)
 		mw.unauthorized(writer, err)
 		return
 	}
@@ -134,14 +135,12 @@ func (mw *Middleware) LoginHandler(writer rest.ResponseWriter, request *rest.Req
 	err := request.DecodeJsonPayload(&loginVals)
 
 	if err != nil {
-		log.Println(err)
 		mw.unauthorized(writer, err)
 		return
 	}
 
 	err = mw.Authenticator(loginVals.Username, loginVals.Password)
 	if err != nil {
-		log.Println(err)
 		mw.unauthorized(writer, err)
 		return
 	}
@@ -162,7 +161,6 @@ func (mw *Middleware) LoginHandler(writer rest.ResponseWriter, request *rest.Req
 	tokenString, err := token.SignedString(mw.Key)
 
 	if err != nil {
-		log.Println(err)
 		mw.unauthorized(writer, err)
 		return
 	}
@@ -205,7 +203,6 @@ func (mw *Middleware) RefreshHandler(writer rest.ResponseWriter, request *rest.R
 
 	// Token should be valid anyway as the RefreshHandler is authed
 	if err != nil {
-		log.Println(err)
 		mw.unauthorized(writer, err)
 		return
 	}
@@ -229,7 +226,6 @@ func (mw *Middleware) RefreshHandler(writer rest.ResponseWriter, request *rest.R
 	tokenString, err := newToken.SignedString(mw.Key)
 
 	if err != nil {
-		log.Println(err)
 		mw.unauthorized(writer, err)
 		return
 	}
