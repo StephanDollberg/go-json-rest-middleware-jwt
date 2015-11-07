@@ -179,6 +179,7 @@ func (mw *Middleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 	if !(len(parts) == 2 && parts[0] == "Bearer") {
 		return nil, errors.New("Invalid auth header")
 	}
+	request.Env["JWT_RAW"] = parts[1]
 
 	return jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
 		if jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method {
