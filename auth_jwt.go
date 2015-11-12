@@ -67,9 +67,6 @@ func (mw *Middleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFunc 
 	if mw.SigningAlgorithm == "" {
 		mw.SigningAlgorithm = "HS256"
 	}
-	if mw.Key == nil {
-		log.Fatal("Key required")
-	}
 	if mw.Timeout == 0 {
 		mw.Timeout = time.Hour
 	}
