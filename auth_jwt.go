@@ -46,6 +46,10 @@ type JWTMiddleware struct {
 	// Optional, default to success.
 	Authorizator func(userId string, request *rest.Request) bool
 
+	// Callback function to store a token in case you want to have it checked within Authorizator in some sort of
+	// database as an additional security measure
+	StoreToken func(username, token string)
+
 	// Callback function that will be called during login.
 	// Using this function it is possible to add additional payload data to the webtoken.
 	// The data is then made available during requests via request.Env["JWT_PAYLOAD"].
@@ -94,6 +98,7 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 
 	request.Env["REMOTE_USER"] = id
 	request.Env["JWT_PAYLOAD"] = token.Claims
+	request.Env["AUTH_TOKEN"] = token.Raw
 
 	if !mw.Authorizator(id, request) {
 		mw.unauthorized(writer)
@@ -159,6 +164,10 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 		return
 	}
 
+	if mw.StoreToken != nil {
+		mw.StoreToken(loginVals.Username, tokenString)
+	}
+
 	writer.WriteJson(resultToken{Token: tokenString})
 }
 
@@ -215,6 +224,10 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	if err != nil {
 		mw.unauthorized(writer)
 		return
+	}
+
+	if mw.StoreToken != nil {
+		mw.StoreToken(newToken.Claims["id"].(string), tokenString)
 	}
 
 	writer.WriteJson(resultToken{Token: tokenString})
