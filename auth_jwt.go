@@ -48,7 +48,7 @@ type JWTMiddleware struct {
 
 	// Callback function to store a token in case you want to have it checked within Authorizator in some sort of
 	// database as an additional security measure
-	StoreToken func(username, token string)
+	StoreToken func(timeout time.Duration) func(username, token string)
 
 	// Callback function that will be called during login.
 	// Using this function it is possible to add additional payload data to the webtoken.
@@ -165,7 +165,7 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 	}
 
 	if mw.StoreToken != nil {
-		mw.StoreToken(loginVals.Username, tokenString)
+		mw.StoreToken(mw.Timeout)(loginVals.Username, tokenString)
 	}
 
 	writer.WriteJson(resultToken{Token: tokenString})
@@ -227,7 +227,7 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	}
 
 	if mw.StoreToken != nil {
-		mw.StoreToken(newToken.Claims["id"].(string), tokenString)
+		mw.StoreToken(mw.Timeout)(newToken.Claims["id"].(string), tokenString)
 	}
 
 	writer.WriteJson(resultToken{Token: tokenString})
