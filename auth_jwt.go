@@ -50,6 +50,9 @@ type JWTMiddleware struct {
 	// database as an additional security measure
 	StoreToken func(timeout time.Duration) func(username, token string)
 
+	// Remove token when refreshing/logging out
+	RemoveToken func(token string)
+
 	// Callback function that will be called during login.
 	// Using this function it is possible to add additional payload data to the webtoken.
 	// The data is then made available during requests via request.Env["JWT_PAYLOAD"].
@@ -57,11 +60,27 @@ type JWTMiddleware struct {
 	// The attributes mentioned on jwt.io can't be used as keys for the map.
 	// Optional, by default no additional data will be set.
 	PayloadFunc func(userId string) map[string]interface{}
+
+	// Function that extracts token string from whichever source
+	TokenExtractor func(request *rest.Request) (string, error)
+
+	// Name of the token header to parse
+	TokenName string
+
+	// Name of the environment variable that holds the token within the rest.Request
+	TokenEnvName string
+
 }
+
 
 // MiddlewareFunc makes JWTMiddleware implement the Middleware interface.
 func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFunc {
-
+	if mw.TokenName == "" {
+		mw.TokenName = "Authorization"
+	}
+	if mw.TokenEnvName == "" {
+		mw.TokenEnvName = "AUTH_TOKEN"
+	}
 	if mw.Realm == "" {
 		log.Fatal("Realm is required")
 	}
@@ -77,6 +96,9 @@ func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFu
 	if mw.Authenticator == nil {
 		log.Fatal("Authenticator is required")
 	}
+	if mw.TokenExtractor == nil {
+		mw.TokenExtractor = defaultTokenExtractor(mw)
+	}
 	if mw.Authorizator == nil {
 		mw.Authorizator = func(userId string, request *rest.Request) bool {
 			return true
@@ -86,6 +108,21 @@ func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFu
 	return func(writer rest.ResponseWriter, request *rest.Request) { mw.middlewareImpl(writer, request, handler) }
 }
 
+func defaultTokenExtractor (mw *JWTMiddleware) func(request *rest.Request) (string, error) {
+	return func(request *rest.Request) (string, error) {
+		authHeader := request.Header.Get(mw.TokenName)
+
+		if authHeader == "" {
+			return "", errors.New("Auth header empty")
+		}
+
+		parts := strings.SplitN(authHeader, " ", 2)
+		if !(len(parts) == 2 && parts[0] == "Bearer") {
+			return "", errors.New("Invalid auth header")
+		}
+		return parts[1], nil
+	}
+}
 func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *rest.Request, handler rest.HandlerFunc) {
 	token, err := mw.parseToken(request)
 
@@ -98,7 +135,7 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 
 	request.Env["REMOTE_USER"] = id
 	request.Env["JWT_PAYLOAD"] = token.Claims
-	request.Env["AUTH_TOKEN"] = token.Raw
+	request.Env[mw.TokenEnvName] = token.Raw
 
 	if !mw.Authorizator(id, request) {
 		mw.unauthorized(writer)
@@ -172,18 +209,14 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 }
 
 func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
-	authHeader := request.Header.Get("Authorization")
+	tokenString, err := mw.TokenExtractor(request)
 
-	if authHeader == "" {
-		return nil, errors.New("Auth header empty")
+	if(err != nil) {
+		return nil, err
 	}
 
-	parts := strings.SplitN(authHeader, " ", 2)
-	if !(len(parts) == 2 && parts[0] == "Bearer") {
-		return nil, errors.New("Invalid auth header")
-	}
 
-	return jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method {
 			return nil, errors.New("Invalid signing algorithm")
 		}
@@ -228,6 +261,10 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 
 	if mw.StoreToken != nil {
 		mw.StoreToken(mw.Timeout)(newToken.Claims["id"].(string), tokenString)
+	}
+
+	if mw.RemoveToken != nil {
+		mw.RemoveToken(token.Raw)
 	}
 
 	writer.WriteJson(resultToken{Token: tokenString})
