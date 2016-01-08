@@ -70,6 +70,10 @@ type JWTMiddleware struct {
 	// Name of the environment variable that holds the token within the rest.Request
 	TokenEnvName string
 
+	// Functions that return the token to a client, allows customising the output, e.g. return
+	// a cookie instead of json body
+	LoginCallback func(tokenString string, request *rest.Request, writer rest.ResponseWriter)
+	RefreshCallback func(tokenString string, request *rest.Request, writer rest.ResponseWriter)
 }
 
 
@@ -105,7 +109,19 @@ func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFu
 		}
 	}
 
+
+	if mw.LoginCallback == nil {
+		mw.LoginCallback = defaultResponseCallback
+	}
+	if mw.RefreshCallback == nil {
+		mw.RefreshCallback = defaultResponseCallback
+	}
+
 	return func(writer rest.ResponseWriter, request *rest.Request) { mw.middlewareImpl(writer, request, handler) }
+}
+
+func defaultResponseCallback(tokenString string, request *rest.Request, writer rest.ResponseWriter) {
+	writer.WriteJson(resultToken{Token:tokenString})
 }
 
 func defaultTokenExtractor (mw *JWTMiddleware) func(request *rest.Request) (string, error) {
@@ -205,7 +221,7 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 		mw.StoreToken(mw.Timeout)(loginVals.Username, tokenString)
 	}
 
-	writer.WriteJson(resultToken{Token: tokenString})
+	mw.LoginCallback(tokenString, request, writer)
 }
 
 func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
@@ -267,7 +283,7 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 		mw.RemoveToken(token.Raw)
 	}
 
-	writer.WriteJson(resultToken{Token: tokenString})
+	mw.RefreshCallback(tokenString, request, writer)
 }
 
 func (mw *JWTMiddleware) unauthorized(writer rest.ResponseWriter) {
