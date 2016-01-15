@@ -51,7 +51,7 @@ type JWTMiddleware struct {
 	StoreToken func(timeout time.Duration) func(username, token string)
 
 	// Remove token when refreshing/logging out
-	RemoveToken func(token string)
+	RemoveToken func(userId, token string)
 
 	// Callback function that will be called during login.
 	// Using this function it is possible to add additional payload data to the webtoken.
@@ -275,12 +275,14 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 		return
 	}
 
+	userId := newToken.Claims["id"].(string)
+
 	if mw.StoreToken != nil {
-		mw.StoreToken(mw.Timeout)(newToken.Claims["id"].(string), tokenString)
+		mw.StoreToken(mw.Timeout)(userId, tokenString)
 	}
 
 	if mw.RemoveToken != nil {
-		mw.RemoveToken(token.Raw)
+		mw.RemoveToken(userId, token.Raw)
 	}
 
 	mw.RefreshCallback(tokenString, request, writer)
