@@ -19,7 +19,7 @@ type DecoderToken struct {
 
 func makeTokenString(username string, key []byte) string {
 	token := jwt.New(jwt.GetSigningMethod("HS256"))
-	token.Claims["id"] = "admin"
+	token.Claims["id"] = username
 	token.Claims["exp"] = time.Now().Add(time.Hour).Unix()
 	token.Claims["orig_iat"] = time.Now().Unix()
 	tokenString, _ := token.SignedString(key)
@@ -107,7 +107,7 @@ func TestAuthJWT(t *testing.T) {
 	recorded = test.RunRequest(t, handler, expiredTimestampReq)
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
-	
+
 	// right credt, right method, right priv, wrong signing method on request
 	tokenBadSigning := jwt.New(jwt.GetSigningMethod("HS384"))
 	tokenBadSigning.Claims["id"] = "admin"
