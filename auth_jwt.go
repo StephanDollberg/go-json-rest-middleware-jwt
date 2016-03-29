@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-// JWTMiddleware provides a Json-Web-Token authentication implementation. On failure, a 401 HTTP response
+// Middleware provides a Json-Web-Token authentication implementation. On failure, a 401 HTTP response
 // is returned. On success, the wrapped middleware is called, and the userId is made available as
 // request.Env["REMOTE_USER"].(string).
 // Users can get a token by posting a json request to LoginHandler. The token then needs to be passed in
 // the Authentication header. Example: Authorization:Bearer XXX_TOKEN_XXX
-type JWTMiddleware struct {
+type Middleware struct {
 	// Realm name to display to the user. Required.
 	Realm string
 
@@ -26,7 +26,10 @@ type JWTMiddleware struct {
 	SigningAlgorithm string
 
 	// Secret key used for signing. Required.
-	Key []byte
+	Key interface{}
+
+	// Secret key used for signing. Required.
+	VerifyKey interface{}
 
 	// Duration that a jwt token is valid. Optional, defaults to one hour.
 	Timeout time.Duration
@@ -39,7 +42,7 @@ type JWTMiddleware struct {
 
 	// Callback function that should perform the authentication of the user based on userId and
 	// password. Must return true on success, false on failure. Required.
-	Authenticator func(userId string, password string) bool
+	Authenticator func(userId string, password string) error
 
 	// Callback function that should perform the authorization of the authenticated user. Called
 	// only after an authentication success. Must return true on success, false on failure.
@@ -55,17 +58,14 @@ type JWTMiddleware struct {
 	PayloadFunc func(userId string) map[string]interface{}
 }
 
-// MiddlewareFunc makes JWTMiddleware implement the Middleware interface.
-func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFunc {
+// MiddlewareFunc makes Middleware implement the Middleware interface.
+func (mw *Middleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFunc {
 
 	if mw.Realm == "" {
 		log.Fatal("Realm is required")
 	}
 	if mw.SigningAlgorithm == "" {
 		mw.SigningAlgorithm = "HS256"
-	}
-	if mw.Key == nil {
-		log.Fatal("Key required")
 	}
 	if mw.Timeout == 0 {
 		mw.Timeout = time.Hour
@@ -79,14 +79,16 @@ func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFu
 		}
 	}
 
-	return func(writer rest.ResponseWriter, request *rest.Request) { mw.middlewareImpl(writer, request, handler) }
+	return func(writer rest.ResponseWriter, request *rest.Request) {
+		mw.middlewareImpl(writer, request, handler)
+	}
 }
 
-func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *rest.Request, handler rest.HandlerFunc) {
+func (mw *Middleware) middlewareImpl(writer rest.ResponseWriter, request *rest.Request, handler rest.HandlerFunc) {
 	token, err := mw.parseToken(request)
 
 	if err != nil {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, err)
 		return
 	}
 
@@ -96,7 +98,7 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 	request.Env["JWT_PAYLOAD"] = token.Claims
 
 	if !mw.Authorizator(id, request) {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, errors.New("Not Authorized"))
 		return
 	}
 
@@ -125,17 +127,18 @@ type login struct {
 // LoginHandler can be used by clients to get a jwt token.
 // Payload needs to be json in the form of {"username": "USERNAME", "password": "PASSWORD"}.
 // Reply will be of the form {"token": "TOKEN"}.
-func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.Request) {
+func (mw *Middleware) LoginHandler(writer rest.ResponseWriter, request *rest.Request) {
 	loginVals := login{}
 	err := request.DecodeJsonPayload(&loginVals)
 
 	if err != nil {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, err)
 		return
 	}
 
-	if !mw.Authenticator(loginVals.Username, loginVals.Password) {
-		mw.unauthorized(writer)
+	err = mw.Authenticator(loginVals.Username, loginVals.Password)
+	if err != nil {
+		mw.unauthorized(writer, err)
 		return
 	}
 
@@ -155,14 +158,14 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 	tokenString, err := token.SignedString(mw.Key)
 
 	if err != nil {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, err)
 		return
 	}
 
 	writer.WriteJson(resultToken{Token: tokenString})
 }
 
-func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
+func (mw *Middleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 	authHeader := request.Header.Get("Authorization")
 
 	if authHeader == "" {
@@ -173,31 +176,39 @@ func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 	if !(len(parts) == 2 && parts[0] == "Bearer") {
 		return nil, errors.New("Invalid auth header")
 	}
+	request.Env["JWT_RAW"] = parts[1]
 
 	return jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
 		if jwt.GetSigningMethod(mw.SigningAlgorithm) != token.Method {
 			return nil, errors.New("Invalid signing algorithm")
 		}
+		if mw.VerifyKey != nil {
+			return mw.VerifyKey, nil
+		}
 		return mw.Key, nil
 	})
+}
+
+type token struct {
+	Token string `json:"token"`
 }
 
 // RefreshHandler can be used to refresh a token. The token still needs to be valid on refresh.
 // Shall be put under an endpoint that is using the JWTMiddleware.
 // Reply will be of the form {"token": "TOKEN"}.
-func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
+func (mw *Middleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
 	token, err := mw.parseToken(request)
 
 	// Token should be valid anyway as the RefreshHandler is authed
 	if err != nil {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, err)
 		return
 	}
 
 	origIat := int64(token.Claims["orig_iat"].(float64))
 
 	if origIat < time.Now().Add(-mw.MaxRefresh).Unix() {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, errors.New("Token Expired"))
 		return
 	}
 
@@ -213,14 +224,14 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	tokenString, err := newToken.SignedString(mw.Key)
 
 	if err != nil {
-		mw.unauthorized(writer)
+		mw.unauthorized(writer, err)
 		return
 	}
 
 	writer.WriteJson(resultToken{Token: tokenString})
 }
 
-func (mw *JWTMiddleware) unauthorized(writer rest.ResponseWriter) {
+func (mw *Middleware) unauthorized(writer rest.ResponseWriter, err error) {
 	writer.Header().Set("WWW-Authenticate", "JWT realm="+mw.Realm)
-	rest.Error(writer, "Not Authorized", http.StatusUnauthorized)
+	rest.Error(writer, err.Error(), http.StatusUnauthorized)
 }
