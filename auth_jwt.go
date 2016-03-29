@@ -28,6 +28,10 @@ type JWTMiddleware struct {
 	// Secret key used for signing. Required.
 	Key []byte
 
+	// UsernameClaimName identifies the payload claim which contains the username.
+	// Optional, default is 'id'
+	UsernameClaimName string
+
 	// Duration that a jwt token is valid. Optional, defaults to one hour.
 	Timeout time.Duration
 
@@ -67,6 +71,9 @@ func (mw *JWTMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.HandlerFu
 	if mw.Key == nil {
 		log.Fatal("Key required")
 	}
+	if mw.UsernameClaimName == "" {
+		mw.UsernameClaimName = "id"
+	}
 	if mw.Timeout == 0 {
 		mw.Timeout = time.Hour
 	}
@@ -90,7 +97,7 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 		return
 	}
 
-	id := token.Claims["id"].(string)
+	id := token.Claims[mw.UsernameClaimName].(string)
 
 	request.Env["REMOTE_USER"] = id
 	request.Env["JWT_PAYLOAD"] = token.Claims
@@ -147,7 +154,7 @@ func (mw *JWTMiddleware) LoginHandler(writer rest.ResponseWriter, request *rest.
 		}
 	}
 
-	token.Claims["id"] = loginVals.Username
+	token.Claims[mw.UsernameClaimName] = loginVals.Username
 	token.Claims["exp"] = time.Now().Add(mw.Timeout).Unix()
 	if mw.MaxRefresh != 0 {
 		token.Claims["orig_iat"] = time.Now().Unix()
@@ -207,7 +214,7 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 		newToken.Claims[key] = token.Claims[key]
 	}
 
-	newToken.Claims["id"] = token.Claims["id"]
+	newToken.Claims[mw.UsernameClaimName] = token.Claims[mw.UsernameClaimName]
 	newToken.Claims["exp"] = time.Now().Add(mw.Timeout).Unix()
 	newToken.Claims["orig_iat"] = origIat
 	tokenString, err := newToken.SignedString(mw.Key)
