@@ -108,6 +108,17 @@ func TestAuthJWT(t *testing.T) {
 	recorded.CodeIs(401)
 	recorded.ContentTypeIsJson()
 
+	// right credt, right method, right priv key but no id
+	tokenNoId := jwt.New(jwt.GetSigningMethod("HS256"))
+	tokenNoId.Claims["exp"] = time.Now().Add(time.Hour).Unix()
+	tokenNoIdString, _ := tokenNoId.SignedString(key)
+
+	noIDReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
+	noIDReq.Header.Set("Authorization", "Bearer "+tokenNoIdString)
+	recorded = test.RunRequest(t, handler, noIDReq)
+	recorded.CodeIs(401)
+	recorded.ContentTypeIsJson()
+
 	// right credt, right method, right priv, wrong signing method on request
 	tokenBadSigning := jwt.New(jwt.GetSigningMethod("HS384"))
 	tokenBadSigning.Claims["id"] = "admin"
