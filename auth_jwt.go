@@ -91,6 +91,13 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 	}
 
 	claims := token.Claims.(jwt.MapClaims)
+	err = claims.Valid()
+
+	if err != nil {
+		mw.unauthorized(writer)
+		return
+	}
+
 	idInterface := claims["id"]
 
 	if idInterface == nil {
@@ -114,10 +121,10 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 // ExtractClaims allows to retrieve the payload
 func ExtractClaims(request *rest.Request) map[string]interface{} {
 	if request.Env["JWT_PAYLOAD"] == nil {
-		emptyClaims := make(map[string]interface{})
+		emptyClaims := make(jwt.MapClaims)
 		return emptyClaims
 	}
-	jwtClaims := request.Env["JWT_PAYLOAD"].(map[string]interface{})
+	jwtClaims := request.Env["JWT_PAYLOAD"].(jwt.MapClaims)
 	return jwtClaims
 }
 

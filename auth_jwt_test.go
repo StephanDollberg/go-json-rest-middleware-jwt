@@ -101,7 +101,7 @@ func TestAuthJWT(t *testing.T) {
 	token := jwt.New(jwt.GetSigningMethod("HS256"))
 	tokenClaims := token.Claims.(jwt.MapClaims)
 	tokenClaims["id"] = "admin"
-	tokenClaims["exp"] = 0
+	tokenClaims["exp"] = 1
 	tokenString, _ := token.SignedString(key)
 
 	expiredTimestampReq := test.MakeSimpleRequest("GET", "http://localhost/", nil)
@@ -245,8 +245,8 @@ func TestAuthJWT(t *testing.T) {
 
 	refreshTokenClaims := refreshToken.Claims.(jwt.MapClaims)
 	if refreshTokenClaims["id"].(string) != "admin" ||
-		int64(refreshTokenClaims["orig_iat"].(float64)) != refreshTokenClaims["orig_iat"].(int64) ||
-		int64(refreshTokenClaims["exp"].(float64)) < refreshTokenClaims["exp"].(int64) {
+		int64(refreshTokenClaims["orig_iat"].(float64)) != refreshableTokenClaims["orig_iat"].(int64) ||
+		int64(refreshTokenClaims["exp"].(float64)) < refreshableTokenClaims["exp"].(int64) {
 		t.Errorf("Received refreshed token with wrong data")
 	}
 }
@@ -334,7 +334,7 @@ func TestAuthJWTPayload(t *testing.T) {
 	payloadApi := rest.NewApi()
 	payloadApi.Use(authMiddleware)
 	payloadApi.SetApp(rest.AppSimple(func(w rest.ResponseWriter, r *rest.Request) {
-		testval := r.Env["JWT_PAYLOAD"].(map[string]interface{})["testkey"].(string)
+		testval := r.Env["JWT_PAYLOAD"].(jwt.MapClaims)["testkey"].(string)
 		w.WriteJson(map[string]string{"testkey": testval})
 	}))
 
