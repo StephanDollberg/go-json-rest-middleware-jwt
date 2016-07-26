@@ -91,12 +91,6 @@ func (mw *JWTMiddleware) middlewareImpl(writer rest.ResponseWriter, request *res
 	}
 
 	claims := token.Claims.(jwt.MapClaims)
-	err = claims.Valid()
-
-	if err != nil {
-		mw.unauthorized(writer)
-		return
-	}
 
 	idInterface := claims["id"]
 
