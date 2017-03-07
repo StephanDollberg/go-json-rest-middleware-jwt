@@ -193,13 +193,7 @@ func (mw *JWTMiddleware) parseToken(request *rest.Request) (*jwt.Token, error) {
 // Shall be put under an endpoint that is using the JWTMiddleware.
 // Reply will be of the form {"token": "TOKEN"}.
 func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *rest.Request) {
-	token, err := mw.parseToken(request)
-
-	// Token should be valid anyway as the RefreshHandler is authed
-	if err != nil {
-		mw.unauthorized(writer)
-		return
-	}
+	token, _ := mw.parseToken(request)
 
 	origIat := int64(token.Claims["orig_iat"].(float64))
 
