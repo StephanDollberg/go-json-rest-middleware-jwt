@@ -196,7 +196,15 @@ func (mw *JWTMiddleware) RefreshHandler(writer rest.ResponseWriter, request *res
 	token, err := mw.parseToken(request)
 
 	// Token should be valid anyway as the RefreshHandler is authed
-	if err != nil {
+	// But we should check if token is still refreshable:
+	// Allowed error is jwt.ValidationErrorExpired, jwt.ValidationErrorNotValidYet means token is completely outdated
+	switch err.(type){
+	case *jwt.ValidationError:
+		if err.(*jwt.ValidationError).Errors != jwt.ValidationErrorExpired {
+			mw.unauthorized(writer)
+			return
+		}
+	default:
 		mw.unauthorized(writer)
 		return
 	}
